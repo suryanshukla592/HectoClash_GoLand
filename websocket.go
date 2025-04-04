@@ -49,6 +49,7 @@ type Message struct {
 	Content    string `json:"content"`
 	RoomID     string `json:"room_id,omitempty"`
 	Opponent   string `json:"opponent,omitempty"`
+	Player     string `json:"player,omitempty"`
 	Expression string `json:"expression,omitempty"` // Add expression field
 }
 
@@ -345,7 +346,7 @@ func sendRoomList(conn *websocket.Conn) {
 	safeSend(conn, []byte(`{"type": "roomList", "content": `+string(roomListJSON)+`}`))
 }
 func startGame(p1, p2 *Player, puzzle string, roomID string) {
-	msg := Message{Type: "start", Content: puzzle, RoomID: roomID, Opponent: p1.opponentID}
+	msg := Message{Type: "start", Content: puzzle, RoomID: roomID, Opponent: p1.opponentID, Player: p2.opponentID}
 	jsonMsg, _ := json.Marshal(msg)
 
 	if err := safeSend(p1.Conn, jsonMsg); err != nil {
