@@ -294,6 +294,8 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 		sendError(conn, "Room is incomplete")
 		return
 	}
+	sendPlayerMeta(conn, "Player1", room.Player1.UID)
+	sendPlayerMeta(conn, "Player2", room.Player2.UID)
 
 	// Send initial expressions (if any)
 	if room.Player1 != nil {
@@ -506,12 +508,21 @@ func handleDisconnection(player *Player) {
 
 	log.Printf("Disconnection handling COMPLETED for player %s.", player.UID)
 }
+func sendPlayerMeta(conn *websocket.Conn, role, uid string) {
+	msg := map[string]string{
+		"type": "playerMeta",
+		"role": role,
+		"uid":  uid,
+	}
+	jsonMsg, _ := json.Marshal(msg)
+	safeSend(conn, jsonMsg)
+}
 func sendExpressionUpdate(conn *websocket.Conn, uid string, roomID string, expression string) {
 	msg := Message{
-		Type:     "expressionUpdate",
-		Content:  expression,
-		RoomID:   roomID,
-		Opponent: uid, //Use opponent to send the UID of the player whose expression is being sent.
+		Type:       "expressionUpdate",
+		Expression: expression,
+		RoomID:     roomID,
+		Opponent:   uid,
 	}
 	jsonMsg, _ := json.Marshal(msg)
 	safeSend(conn, jsonMsg)
