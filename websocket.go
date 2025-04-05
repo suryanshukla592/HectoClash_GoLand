@@ -45,12 +45,12 @@ type MessageSpec struct {
 	RoomID string `json:"room_id"`
 }
 type MatchHistory struct {
-	SelfUID     string    `firestore:"selfUID"`
-	OpponentUID string    `firestore:"opponentUID"`
-	Timestamp   time.Time `firestore:"timestamp"`
-	Puzzle      string    `firestore:"puzzle"`
-	Result      string    `firestore:"result"` // "win", "lose", or "draw"
-	Feedback    string    `firestore:"feedback"`
+	SelfUID     string `firestore:"selfUID"`
+	OpponentUID string `firestore:"opponentUID"`
+	Timestamp   int64  `firestore:"timestamp"`
+	Puzzle      string `firestore:"puzzle"`
+	Result      string `firestore:"result"` // "win", "lose", or "draw"
+	Feedback    string `firestore:"feedback"`
 }
 
 // Message represents a message sent between the server and the client.
@@ -660,10 +660,11 @@ func sendError(conn *websocket.Conn, message string) {
 }
 func SaveMatchHistory(ctx context.Context, uid1, uid2, puzzle string, result1, result2, feedback1, feedback2 string, startTime time.Time) error {
 	// Create match history for both users
+	milliseconds := startTime.UnixNano() / 1_000_000
 	match1 := MatchHistory{
 		SelfUID:     uid1,
 		OpponentUID: uid2,
-		Timestamp:   startTime, // Use startTime instead of time.Now()
+		Timestamp:   milliseconds, // Use startTime instead of time.Now()
 		Puzzle:      puzzle,
 		Result:      result1,
 		Feedback:    feedback1,
@@ -672,18 +673,18 @@ func SaveMatchHistory(ctx context.Context, uid1, uid2, puzzle string, result1, r
 	match2 := MatchHistory{
 		SelfUID:     uid2,
 		OpponentUID: uid1,
-		Timestamp:   startTime, // Use startTime for both
+		Timestamp:   milliseconds, // Use startTime for both
 		Puzzle:      puzzle,
 		Result:      result2,
 		Feedback:    feedback2,
 	}
 
-	_, err := dbClient.Collection("Users").Doc(uid1).Collection("MatchHistory").Doc("MatchDoc").Collection("Matches").Doc(startTime.Format(time.RFC3339Nano)).Set(ctx, match1)
+	_, err := dbClient.Collection("Users").Doc(uid1).Collection("MatchHistory").Doc(startTime.Format(time.RFC3339Nano)).Set(ctx, match1)
 	if err != nil {
 		return fmt.Errorf("error saving match history for %s: %w", uid1, err)
 	}
 
-	_, err = dbClient.Collection("Users").Doc(uid2).Collection("MatchHistory").Doc("MatchDoc").Collection("Matches").Doc(startTime.Format(time.RFC3339Nano)).Set(ctx, match2)
+	_, err = dbClient.Collection("Users").Doc(uid2).Collection("MatchHistory").Doc(startTime.Format(time.RFC3339Nano)).Set(ctx, match2)
 	if err != nil {
 		return fmt.Errorf("error saving match history for %s: %w", uid2, err)
 	}
