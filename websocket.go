@@ -425,11 +425,19 @@ func closeRoom(room *Room, reason string) {
 			go updatePlayerRating(p1.UID, 50)
 			go incrementMatchesWon(p1.UID)
 			go updatePlayerRating(p2.UID, -50)
+			duration := time.Since(room.StartTime)
+			timeTaken := int64(duration.Seconds())
+			go updateTime(p1, timeTaken)
+			go updateTime(p2, 120)
 			sendResult(p1, "You Won !!", "Opponent Left (+50)")
 		} else if left == p1.UID {
 			go updatePlayerRating(p2.UID, 50)
 			go incrementMatchesWon(p2.UID)
 			go updatePlayerRating(p1.UID, -50)
+			duration := time.Since(room.StartTime)
+			timeTaken := int64(duration.Seconds())
+			go updateTime(p2, timeTaken)
+			go updateTime(p1, 120)
 			sendResult(p2, "You Won !!", "(Opponent Left) (+50)")
 		}
 
@@ -486,7 +494,7 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 	player.Submissions++
 
 	if submittedAnswer == float64(targetValue) {
-		log.Printf("Player %s submitted correct answer %f in room %s", player.UID, submittedAnswer, roomID)
+		log.Printf("Player %s submitted correct answer %d in room %s", player.UID, int64(submittedAnswer), roomID)
 		sendFeedback(player.Conn, "You Won (Solved) (+50)")
 		go updatePlayerRating(player.UID, 50)
 		go incrementMatchesWon(player.UID)
