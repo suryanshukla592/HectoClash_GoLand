@@ -130,10 +130,9 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		player = &Player{Conn: conn, UID: msg.UID}
-		handleSpectateRoom(conn, player, msg.RoomID)
+		handleSpectateRoom(conn, player, msg.RoomID) // Corrected call
 		return
 	}
-
 	var req MatchRequest
 	if err := json.Unmarshal(p, &req); err != nil {
 		log.Printf("Error unmarshalling MatchRequest: %v", err)
@@ -237,6 +236,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 				}
 				broadcastExpressionUpdate(room, player.UID, msg.Content)
 			}
+
 		case "submit":
 			var submitReq SubmitRequest
 			if err := json.Unmarshal(msgBytes, &submitReq); err == nil {
@@ -293,7 +293,7 @@ func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 		Type:       "expressionUpdate",
 		Expression: expression,
 		RoomID:     room.Player1.RoomID,
-		Opponent:   playerUID,
+		Opponent:   playerUID, // Sending player UID in the 'opponent' field as per your Android code
 	}
 	updateJSON, _ := json.Marshal(updateMessage)
 
@@ -342,10 +342,16 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 	// Send initial puzzle
 	sendPuzzle(conn, room.Puzzle)
 
-	// Send current expressions (if any)
+	// Send current expressions
 	sendExpressionUpdateToSpectator(conn, room.Player1.UID, room.Expr1, room.Player1.RoomID)
 	sendExpressionUpdateToSpectator(conn, room.Player2.UID, room.Expr2, room.Player2.RoomID)
 }
+func sendPlayerMeta(conn *websocket.Conn, role, uid string) {
+	message := Message{Type: "playerMeta", Player: uid, Content: uid, Opponent: role} // Keep 'Opponent' for now based on your Android code
+	jsonMessage, _ := json.Marshal(message)
+	safeSend(conn, jsonMessage)
+}
+
 func sendPuzzle(conn *websocket.Conn, puzzle string) {
 	message := Message{Type: "puzzle", Content: puzzle}
 	jsonMessage, _ := json.Marshal(message)
@@ -354,12 +360,6 @@ func sendPuzzle(conn *websocket.Conn, puzzle string) {
 
 func sendExpressionUpdateToSpectator(conn *websocket.Conn, playerUID, expression, roomID string) {
 	message := Message{Type: "expressionUpdate", Opponent: playerUID, Expression: expression, RoomID: roomID}
-	jsonMessage, _ := json.Marshal(message)
-	safeSend(conn, jsonMessage)
-}
-
-func sendPlayerMeta(conn *websocket.Conn, role, uid string) {
-	message := Message{Type: "playerMeta", Content: uid, Player: uid, Opponent: role}
 	jsonMessage, _ := json.Marshal(message)
 	safeSend(conn, jsonMessage)
 }
