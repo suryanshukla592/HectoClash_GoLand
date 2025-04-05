@@ -70,6 +70,8 @@ type Room struct {
 	StartTime  time.Time
 	Timer      *time.Timer
 	Spectators []*Player
+	Expr1      string // Store Player 1's current expression
+	Expr2      string // Store Player 2's current expression
 }
 
 func initFirebase() {
@@ -185,6 +187,8 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			Player2:   opponent,
 			Puzzle:    puzzle,
 			StartTime: time.Now(),
+			Expr1:     "", // Initialize expressions
+			Expr2:     "",
 		}
 		startRoomTimer(room)
 		rooms[roomID] = room // Store the Room struct
@@ -225,12 +229,13 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		switch msg.Type {
 		case "expressionUpdate":
 			if room, ok := rooms[msg.RoomID]; ok {
-				broadcastExpressionUpdate(room, player.UID, msg.Content)
-				if room.Player1.UID == player.UID && room.Player2 != nil {
-					safeSend(room.Player2.Conn, msgBytes)
-				} else if room.Player2.UID == player.UID && room.Player1 != nil {
-					safeSend(room.Player1.Conn, msgBytes)
+				// Store the expression in the room
+				if room.Player1 != nil && room.Player1.UID == player.UID {
+					room.Expr1 = msg.Content
+				} else if room.Player2 != nil && room.Player2.UID == player.UID {
+					room.Expr2 = msg.Content
 				}
+				broadcastExpressionUpdate(room, player.UID, msg.Content)
 			}
 		case "submit":
 			var submitReq SubmitRequest
@@ -286,19 +291,23 @@ func cleanAllRoomsAndQueue() {
 func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 	updateMessage := Message{
 		Type:       "expressionUpdate",
-		Opponent:   playerUID,
 		Expression: expression,
 		RoomID:     room.Player1.RoomID,
+		Opponent:   playerUID,
 	}
 	updateJSON, _ := json.Marshal(updateMessage)
-	updateString := string(updateJSON)
 
-	if room.Player1 != nil {
-		safeSend(room.Player1.Conn, []byte(updateString))
+	// Send to Player 1 if they are not the sender
+	if room.Player1 != nil && room.Player1.UID != playerUID {
+		safeSend(room.Player1.Conn, updateJSON)
 	}
-	if room.Player2 != nil {
-		safeSend(room.Player2.Conn, []byte(updateString))
+
+	// Send to Player 2 if they are not the sender
+	if room.Player2 != nil && room.Player2.UID != playerUID {
+		safeSend(room.Player2.Conn, updateJSON)
 	}
+
+	// Send to all spectators
 	for _, spectator := range room.Spectators {
 		safeSend(spectator.Conn, updateJSON)
 	}
@@ -330,9 +339,29 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 	sendPlayerMeta(conn, "Player1", room.Player1.UID)
 	sendPlayerMeta(conn, "Player2", room.Player2.UID)
 
-	// Send current expressions
-	sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
-	sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player2.Puzzle)
+	// Send initial puzzle
+	sendPuzzle(conn, room.Puzzle)
+
+	// Send current expressions (if any)
+	sendExpressionUpdateToSpectator(conn, room.Player1.UID, room.Expr1, room.Player1.RoomID)
+	sendExpressionUpdateToSpectator(conn, room.Player2.UID, room.Expr2, room.Player2.RoomID)
+}
+func sendPuzzle(conn *websocket.Conn, puzzle string) {
+	message := Message{Type: "puzzle", Content: puzzle}
+	jsonMessage, _ := json.Marshal(message)
+	safeSend(conn, jsonMessage)
+}
+
+func sendExpressionUpdateToSpectator(conn *websocket.Conn, playerUID, expression, roomID string) {
+	message := Message{Type: "expressionUpdate", Opponent: playerUID, Expression: expression, RoomID: roomID}
+	jsonMessage, _ := json.Marshal(message)
+	safeSend(conn, jsonMessage)
+}
+
+func sendPlayerMeta(conn *websocket.Conn, role, uid string) {
+	message := Message{Type: "playerMeta", Content: uid, Player: uid, Opponent: role}
+	jsonMessage, _ := json.Marshal(message)
+	safeSend(conn, jsonMessage)
 }
 func incrementMatchesPlayed(playerID string) {
 	ctx := context.Background()
@@ -584,25 +613,6 @@ func handleDisconnection(player *Player) {
 	}
 
 	log.Printf("Disconnection handling COMPLETED for player %s.", player.UID)
-}
-func sendPlayerMeta(conn *websocket.Conn, role, uid string) {
-	msg := map[string]string{
-		"type": "playerMeta",
-		"role": role,
-		"uid":  uid,
-	}
-	jsonMsg, _ := json.Marshal(msg)
-	safeSend(conn, jsonMsg)
-}
-func sendExpressionUpdate(conn *websocket.Conn, uid string, roomID string, expression string) {
-	msg := Message{
-		Type:       "expressionUpdate",
-		Expression: expression,
-		RoomID:     roomID,
-		Opponent:   uid,
-	}
-	jsonMsg, _ := json.Marshal(msg)
-	safeSend(conn, jsonMsg)
 }
 func updateAccuracy(player *Player) {
 	ctx := context.Background()
