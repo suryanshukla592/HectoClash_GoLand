@@ -445,8 +445,8 @@ func closeRoom(room *Room, reason string) {
 				go updatePlayerRating(p2.UID, -10)
 				go updateTime(p1, 120)
 				go updateTime(p2, 120)
-				sendResult(p1, "Game Over!", "Time limit reached - No clear winner. (-10)")
-				sendResult(p2, "Game Over!", "Time limit reached - No clear winner. (-10)")
+				sendResult(p1, "Time limit reached", "Match Drawn. (-10)")
+				sendResult(p2, "Time limit reached", "Match Drawn. (-10)")
 
 			}
 		} else if p1 != nil {
@@ -495,8 +495,8 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 		go updateTime(player, timeTaken)
 		declareWinner(player, "Solved", rawexpressionStr)
 	} else {
-		log.Printf("Player %s submitted incorrect answer %f in room %s", player.UID, submittedAnswer, roomID)
-		sendFeedback(player.Conn, fmt.Sprintf("Incorrect. Your answer: %f", submittedAnswer))
+		log.Printf("Player %s submitted incorrect answer %d in room %s", player.UID, int64(submittedAnswer), roomID)
+		sendFeedback(player.Conn, fmt.Sprintf("Incorrect. Your answer: %d", int64(submittedAnswer)))
 	}
 }
 func handleDisconnection(player *Player) {
@@ -724,7 +724,7 @@ func updatePlayerRating(uid string, change int) {
 }
 
 func declareWinnerInternal(winner *Player, loser *Player, reason string) {
-	sendResult(winner, "You win!", fmt.Sprintf("(%s) (+50)", reason))
+	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
 	sendResult(loser, "You lose!", "(-50)")
 
 	// Update Firestore ratings
@@ -768,7 +768,7 @@ func declareWinner(winner *Player, reason string, expression string) {
 		log.Printf("Loser NOT identified in declareWinner for room %s.", roomID)
 	}
 
-	sendResult(winner, "You win!", fmt.Sprintf("(%s) (+50)", reason))
+	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
 	winner.Opponent = nil
 	winner.RoomID = ""
 	winner.Submitted = false
