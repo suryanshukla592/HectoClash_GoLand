@@ -11,6 +11,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -689,11 +690,26 @@ func updateTime(player *Player, timeTaken int64) {
 }
 
 func generatePuzzle() string {
-	digits := ""
-	for i := 0; i < 6; i++ {
-		digits += fmt.Sprintf("%d", rand.Intn(9)+1) // Digits 1-9
+	rand.Seed(time.Now().UnixNano())
+
+	for {
+		digits := ""
+		for i := 0; i < 6; i++ {
+			digits += fmt.Sprintf("%d", rand.Intn(9)+1)
+		}
+
+		// Call Python to check if digits are solvable
+		cmd := exec.Command("python", "check_hectoc.py", digits)
+		output, err := cmd.Output()
+		if err != nil {
+			fmt.Println("Python error:", err)
+			continue
+		}
+
+		if strings.TrimSpace(string(output)) == "True" {
+			return digits
+		}
 	}
-	return digits
 }
 func safeSend(conn *websocket.Conn, msg []byte) error {
 	if conn == nil {
