@@ -44,6 +44,14 @@ type MessageSpec struct {
 	UID    string `json:"uid"`
 	RoomID string `json:"room_id"`
 }
+type MatchHistory struct {
+	SelfUID     string    `firestore:"selfUID"`
+	OpponentUID string    `firestore:"opponentUID"`
+	Timestamp   time.Time `firestore:"timestamp"`
+	Puzzle      string    `firestore:"puzzle"`
+	Result      string    `firestore:"result"` // "win", "lose", or "draw"
+	Feedback    string    `firestore:"feedback"`
+}
 
 // Message represents a message sent between the server and the client.
 type Message struct {
@@ -212,7 +220,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 			if roomExists {
 				log.Printf("Closing room %s because player %s disconnected.", player.RoomID, player.UID)
-				closeRoom(room, fmt.Sprintf("Opponent Left %s", player.UID))
+				closeRoom(room, fmt.Sprintf("Opponent Left %s", player.UID), "", "", "", "", nil)
 			}
 
 			handleDisconnection(player)
@@ -452,83 +460,9 @@ func startGame(p1, p2 *Player, puzzle string, roomID string) {
 }
 func startRoomTimer(room *Room) {
 	room.Timer = time.AfterFunc(gameDuration, func() {
-		closeRoom(room, "time limit reached")
+		closeRoom(room, "time limit reached", "", "", "", "", nil)
 	})
 	log.Printf("Room %s timer started for %v", room.Player1.RoomID, gameDuration)
-}
-func closeRoom(room *Room, reason string) {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	roomID := room.Player1.RoomID
-	p1 := room.Player1
-	p2 := room.Player2
-
-	if _, ok := rooms[roomID]; !ok {
-		log.Printf("Room %s already closed or doesn't exist.", roomID)
-		return
-	}
-
-	log.Printf("Closing room %s: %s", roomID, reason)
-
-	// Determine winner based on submission status or lack thereof
-	if strings.HasPrefix(reason, "Opponent Left") {
-		// Extract the UID of the player who left
-		left := strings.TrimPrefix(reason, "Opponent Left ")
-		if left == p2.UID {
-			go updatePlayerRating(p1.UID, 50)
-			go incrementMatchesWon(p1.UID)
-			go updatePlayerRating(p2.UID, -50)
-			duration := time.Since(room.StartTime)
-			timeTaken := int64(duration.Seconds())
-			go updateTime(p1, timeTaken)
-			go updateTime(p2, 120)
-			sendResult(p1, "You Won !!", "Opponent Left (+50)")
-		} else if left == p1.UID {
-			go updatePlayerRating(p2.UID, 50)
-			go incrementMatchesWon(p2.UID)
-			go updatePlayerRating(p1.UID, -50)
-			duration := time.Since(room.StartTime)
-			timeTaken := int64(duration.Seconds())
-			go updateTime(p2, timeTaken)
-			go updateTime(p1, 120)
-			sendResult(p2, "You Won !!", "(Opponent Left) (+50)")
-		}
-
-	} else {
-		if p1 != nil && p2 != nil {
-			if p1.Submitted && !p2.Submitted {
-				declareWinnerInternal(p1, p2, "opponent timed out")
-			} else if !p1.Submitted && p2.Submitted {
-				declareWinnerInternal(p2, p1, "opponent timed out")
-			} else {
-				// If neither submitted or both submitted (without further logic), declare a draw or no winner.
-				go updatePlayerRating(p1.UID, -10)
-				go updatePlayerRating(p2.UID, -10)
-				go updateTime(p1, 120)
-				go updateTime(p2, 120)
-				sendResult(p1, "Time limit reached", "Match Drawn. (-10)")
-				sendResult(p2, "Time limit reached", "Match Drawn. (-10)")
-
-			}
-		} else if p1 != nil {
-			sendResult(p1, "Game Over!", reason)
-		} else if p2 != nil {
-			sendResult(p2, "Game Over!", reason)
-		}
-	}
-
-	// Clean up
-	if p1 != nil {
-		p1.Opponent = nil
-		p1.RoomID = ""
-	}
-	if p2 != nil {
-		p2.Opponent = nil
-		p2.RoomID = ""
-	}
-	delete(rooms, roomID)
-	log.Printf("Room %s closed.", roomID)
 }
 func handleSubmission(player *Player, expression string, rawexpression string, roomID string) {
 	room, ok := rooms[roomID]
@@ -724,6 +658,38 @@ func sendError(conn *websocket.Conn, message string) {
 		log.Println("Error sending error message:", err)
 	}
 }
+func SaveMatchHistory(ctx context.Context, uid1, uid2, puzzle string, result1, result2, feedback1, feedback2 string, startTime time.Time) error {
+	// Create match history for both users
+	match1 := MatchHistory{
+		SelfUID:     uid1,
+		OpponentUID: uid2,
+		Timestamp:   startTime, // Use startTime instead of time.Now()
+		Puzzle:      puzzle,
+		Result:      result1,
+		Feedback:    feedback1,
+	}
+
+	match2 := MatchHistory{
+		SelfUID:     uid2,
+		OpponentUID: uid1,
+		Timestamp:   startTime, // Use startTime for both
+		Puzzle:      puzzle,
+		Result:      result2,
+		Feedback:    feedback2,
+	}
+
+	_, err := dbClient.Collection("Users").Doc(uid1).Collection("MatchHistory").Doc("MatchDoc").Collection("Matches").Doc(startTime.Format(time.RFC3339Nano)).Set(ctx, match1)
+	if err != nil {
+		return fmt.Errorf("error saving match history for %s: %w", uid1, err)
+	}
+
+	_, err = dbClient.Collection("Users").Doc(uid2).Collection("MatchHistory").Doc("MatchDoc").Collection("Matches").Doc(startTime.Format(time.RFC3339Nano)).Set(ctx, match2)
+	if err != nil {
+		return fmt.Errorf("error saving match history for %s: %w", uid2, err)
+	}
+
+	return nil
+}
 
 func sendResult(player *Player, title, message string) {
 	if player != nil && player.Conn != nil {
@@ -781,7 +747,7 @@ func updatePlayerRating(uid string, change int) {
 	}
 }
 
-func declareWinnerInternal(winner *Player, loser *Player, reason string) {
+func declareWinnerInternal(winner *Player, loser *Player, reason string, expression string) (string, string, string, string, []string) {
 	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
 	sendResult(loser, "You lose!", "(-50)")
 
@@ -791,6 +757,14 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string) {
 	go updateAccuracy(winner)
 	go updateAccuracy(loser)
 	go updatePlayerRating(loser.UID, -50)
+
+	result1 := "win"
+	result2 := "lose"
+	feedback1 := fmt.Sprintf("You Won !! (%s)", reason)
+	feedback2 := fmt.Sprintf("You lose! ")
+	solutions := []string{"solution1", "solution2", "solution3"} // Replace with actual solutions
+
+	return result1, result2, feedback1, feedback2, solutions
 }
 
 func declareWinner(winner *Player, reason string, expression string) {
@@ -814,10 +788,11 @@ func declareWinner(winner *Player, reason string, expression string) {
 	go updateAccuracy(loser)
 	go updateAccuracy(winner)
 
+	result1, result2, feedback1, feedback2, solutions := declareWinnerInternal(winner, loser, reason, expression)
+
 	if loser != nil {
 		log.Printf("Loser identified: %s", loser.UID)
 		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Possible Solution : %s = 100", expression))
-		go updatePlayerRating(loser.UID, -50)
 		loser.Opponent = nil
 		loser.RoomID = ""
 		loser.Submitted = false
@@ -826,16 +801,124 @@ func declareWinner(winner *Player, reason string, expression string) {
 		log.Printf("Loser NOT identified in declareWinner for room %s.", roomID)
 	}
 
-	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
-	winner.Opponent = nil
-	winner.RoomID = ""
-	winner.Submitted = false
+	closeRoom(room, fmt.Sprintf("Player %s Won (%s)", winner.UID, reason), result1, result2, feedback1, feedback2, solutions)
+	// The closeRoom function will handle cleanup and saving the match history
 
-	if room.Timer != nil {
-		room.Timer.Stop()
-		log.Printf("Timer stopped for room %s.", roomID)
+	log.Printf("--- declareWinner completed ---")
+}
+
+func closeRoom(room *Room, reason string, result1 string, result2 string, feedback1 string, feedback2 string, solutions []string) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	roomID := room.Player1.RoomID
+	p1 := room.Player1
+	p2 := room.Player2
+
+	if _, ok := rooms[roomID]; !ok {
+		log.Printf("Room %s already closed or doesn't exist.", roomID)
+		return
+	}
+
+	log.Printf("Closing room %s: %s", roomID, reason)
+
+	// Determine winner based on submission status or lack thereof
+	if strings.HasPrefix(reason, "Opponent Left") {
+		// Extract the UID of the player who left
+		left := strings.TrimPrefix(reason, "Opponent Left ")
+		if left == p2.UID {
+			go updatePlayerRating(p1.UID, 50)
+			go incrementMatchesWon(p1.UID)
+			go updatePlayerRating(p2.UID, -50)
+			duration := time.Since(room.StartTime)
+			timeTaken := int64(duration.Seconds())
+			go updateTime(p1, timeTaken)
+			go updateTime(p2, 120)
+			sendResult(p1, "You Won !!", "Opponent Left (+50)")
+			result1 = "win"
+			result2 = "lose"
+			feedback1 = "Opponent Left"
+			feedback2 = "You Left"
+		} else if left == p1.UID {
+			go updatePlayerRating(p2.UID, 50)
+			go incrementMatchesWon(p2.UID)
+			go updatePlayerRating(p1.UID, -50)
+			duration := time.Since(room.StartTime)
+			timeTaken := int64(duration.Seconds())
+			go updateTime(p2, timeTaken)
+			go updateTime(p1, 120)
+			sendResult(p2, "You Won !!", "(Opponent Left) (+50)")
+			result1 = "lose"
+			result2 = "win"
+			feedback1 = "You Left"
+			feedback2 = "Opponent Left"
+		}
+
+	} else if reason == "time limit reached" {
+		go updatePlayerRating(p1.UID, -10)
+		go updatePlayerRating(p2.UID, -10)
+		go updateTime(p1, 120)
+		go updateTime(p2, 120)
+		sendResult(p1, "Time limit reached", "Match Drawn. (-10)")
+		sendResult(p2, "Time limit reached", "Match Drawn. (-10)")
+		result1 = "draw"
+		result2 = "draw"
+		feedback1 = "Time limit reached"
+		feedback2 = "Time limit reached"
+
+	} else {
+		if p1 != nil && p2 != nil {
+			if p1.Submitted && !p2.Submitted {
+				declareWinnerInternal(p1, p2, "opponent timed out", room.Expr1)
+			} else if !p1.Submitted && p2.Submitted {
+				declareWinnerInternal(p2, p1, "opponent timed out", room.Expr2)
+			} else {
+				// If neither submitted or both submitted (without further logic), declare a draw or no winner.
+				go updatePlayerRating(p1.UID, -10)
+				go updatePlayerRating(p2.UID, -10)
+				go updateTime(p1, 120)
+				go updateTime(p2, 120)
+				sendResult(p1, "Time limit reached", "Match Drawn. (-10)")
+				sendResult(p2, "Time limit reached", "Match Drawn. (-10)")
+				result1 = "draw"
+				result2 = "draw"
+				feedback1 = "Time limit reached"
+				feedback2 = "Time limit reached"
+			}
+		} else if p1 != nil {
+			sendResult(p1, "Game Over!", reason)
+			result1 = "unknown"
+			result2 = "unknown"
+			feedback1 = reason
+			feedback2 = reason
+		} else if p2 != nil {
+			sendResult(p2, "Game Over!", reason)
+			result1 = "unknown"
+			result2 = "unknown"
+			feedback1 = reason
+			feedback2 = reason
+		}
+	}
+
+	// Gather solutions (You might need to store these during the game)
+
+	// Save match history
+	err := SaveMatchHistory(context.Background(), p1.UID, p2.UID, room.Puzzle, result1, result2, feedback1, feedback2, room.StartTime)
+	if err != nil {
+		log.Printf("Error saving match history for room %s: %v", roomID, err)
+	} else {
+		log.Printf("Match history saved for room %s", roomID)
+	}
+
+	// Clean up
+	if p1 != nil {
+		p1.Opponent = nil
+		p1.RoomID = ""
+	}
+	if p2 != nil {
+		p2.Opponent = nil
+		p2.RoomID = ""
 	}
 	delete(rooms, roomID)
-	log.Printf("Room %s CLOSED in declareWinner.", roomID)
-	log.Printf("--- declareWinner completed ---")
+	log.Printf("Room %s closed.", roomID)
 }
