@@ -225,6 +225,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		switch msg.Type {
 		case "expressionUpdate":
 			if room, ok := rooms[msg.RoomID]; ok {
+				broadcastExpressionUpdate(room, player.UID, msg.Content)
 				if room.Player1.UID == player.UID && room.Player2 != nil {
 					safeSend(room.Player2.Conn, msgBytes)
 				} else if room.Player2.UID == player.UID && room.Player1 != nil {
@@ -281,6 +282,26 @@ func cleanAllRoomsAndQueue() {
 	log.Printf("Closed and cleared %d active rooms.", numRooms)
 
 	log.Println("--- Forced cleanup of all rooms and queue completed ---")
+}
+func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
+	updateMessage := Message{
+		Type:       "expressionUpdate",
+		Opponent:   playerUID,
+		Expression: expression,
+		RoomID:     room.Player1.RoomID,
+	}
+	updateJSON, _ := json.Marshal(updateMessage)
+	updateString := string(updateJSON)
+
+	if room.Player1 != nil {
+		safeSend(room.Player1.Conn, []byte(updateString))
+	}
+	if room.Player2 != nil {
+		safeSend(room.Player2.Conn, []byte(updateString))
+	}
+	for _, spectator := range room.Spectators {
+		safeSend(spectator.Conn, updateJSON)
+	}
 }
 
 func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) {
