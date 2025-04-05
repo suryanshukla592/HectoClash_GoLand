@@ -293,8 +293,8 @@ func cleanAllRoomsAndQueue() {
 func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 	updateMessage := Message{
 		Type:       "expressionUpdate",
-		Player:     playerUID,
-		Expression: expression,
+		Player:     "playerUID",
+		Expression: "expression",
 		RoomID:     room.Player1.RoomID,
 	}
 	updateJSON, _ := json.Marshal(updateMessage)
@@ -338,8 +338,8 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string, 
 	sendPlayerMeta(conn, "Player2", room.Player2.UID)
 
 	// Send current expressions
-	sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, puzzle)
-	sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, puzzle)
+	sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
+	sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player1.Puzzle)
 }
 func incrementMatchesPlayed(playerID string) {
 	ctx := context.Background()
