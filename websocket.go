@@ -699,7 +699,7 @@ func generatePuzzle() string {
 		}
 
 		// Call Python to check if digits are solvable
-		cmd := exec.Command("python", "check_hectoc.py", digits)
+		cmd := exec.Command("python3", "check_hectoc.py", digits)
 		output, err := cmd.Output()
 		if err != nil {
 			fmt.Println("Python error:", err)
