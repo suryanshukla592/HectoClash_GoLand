@@ -23,14 +23,15 @@ const (
 
 // Player represents a connected client.
 type Player struct {
-	UID        string
-	Conn       *websocket.Conn
-	Opponent   *Player
-	Puzzle     string
-	RoomID     string
-	opponentID string
-	Timer      *time.Timer // Individual timer (can be removed if using a central room timer)
-	Submitted  bool
+	UID         string
+	Conn        *websocket.Conn
+	Opponent    *Player
+	Puzzle      string
+	RoomID      string
+	Submissions int64
+	opponentID  string
+	Timer       *time.Timer // Individual timer (can be removed if using a central room timer)
+	Submitted   bool
 }
 
 // MatchRequest represents the initial matchmaking request from the client.
@@ -170,6 +171,8 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		player.Opponent = opponent
 		opponent.Opponent = player
 		player.RoomID = roomID
+		player.Submissions = 0
+		opponent.Submissions = 0
 		opponent.RoomID = roomID
 		puzzle := generatePuzzle()
 		player.Puzzle = puzzle
@@ -310,6 +313,34 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 	sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
 	sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player2.Puzzle)
 }
+func incrementMatchesPlayed(playerID string) {
+	ctx := context.Background()
+	_, err := dbClient.Collection("Users").Doc(playerID).Update(ctx, []firestore.Update{
+		{
+			Path:  "Played",
+			Value: firestore.Increment(1),
+		},
+	})
+	if err != nil {
+		log.Printf("❌ Failed to increment 'played' for %s: %v", playerID, err)
+	} else {
+		log.Printf("✅ Incremented 'played' for %s", playerID)
+	}
+}
+func incrementMatchesWon(playerID string) {
+	ctx := context.Background()
+	_, err := dbClient.Collection("Users").Doc(playerID).Update(ctx, []firestore.Update{
+		{
+			Path:  "Won",
+			Value: firestore.Increment(1),
+		},
+	})
+	if err != nil {
+		log.Printf("❌ Failed to increment 'Won' for %s: %v", playerID, err)
+	} else {
+		log.Printf("✅ Incremented 'Won' for %s", playerID)
+	}
+}
 
 func isPlayerActive(uid string) bool {
 	// Check queue
@@ -353,6 +384,8 @@ func sendRoomList(conn *websocket.Conn) {
 func startGame(p1, p2 *Player, puzzle string, roomID string) {
 	msg := Message{Type: "start", Content: puzzle, RoomID: roomID, Opponent: p1.opponentID, Player: p2.opponentID}
 	jsonMsg, _ := json.Marshal(msg)
+	go incrementMatchesPlayed(p1.UID)
+	go incrementMatchesPlayed(p2.UID)
 
 	if err := safeSend(p1.Conn, jsonMsg); err != nil {
 		handleDisconnection(p1)
@@ -390,10 +423,12 @@ func closeRoom(room *Room, reason string) {
 		left := strings.TrimPrefix(reason, "Opponent Left ")
 		if left == p2.UID {
 			go updatePlayerRating(p1.UID, 50)
+			go incrementMatchesWon(p1.UID)
 			go updatePlayerRating(p2.UID, -50)
 			sendResult(p1, "You Won !!", "Opponent Left (+50)")
 		} else if left == p1.UID {
 			go updatePlayerRating(p2.UID, 50)
+			go incrementMatchesWon(p2.UID)
 			go updatePlayerRating(p1.UID, -50)
 			sendResult(p2, "You Won !!", "(Opponent Left) (+50)")
 		}
@@ -406,8 +441,10 @@ func closeRoom(room *Room, reason string) {
 				declareWinnerInternal(p2, p1, "opponent timed out")
 			} else {
 				// If neither submitted or both submitted (without further logic), declare a draw or no winner.
-				updatePlayerRating(p1.UID, -10)
-				updatePlayerRating(p2.UID, -10)
+				go updatePlayerRating(p1.UID, -10)
+				go updatePlayerRating(p2.UID, -10)
+				go updateTime(p1, 120)
+				go updateTime(p2, 120)
 				sendResult(p1, "Game Over!", "Time limit reached - No clear winner. (-10)")
 				sendResult(p2, "Game Over!", "Time limit reached - No clear winner. (-10)")
 
@@ -446,11 +483,16 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 		sendFeedback(player.Conn, "Invalid answer format.")
 		return
 	}
+	player.Submissions++
 
 	if submittedAnswer == float64(targetValue) {
 		log.Printf("Player %s submitted correct answer %f in room %s", player.UID, submittedAnswer, roomID)
 		sendFeedback(player.Conn, "You Won (Solved) (+50)")
-		updatePlayerRating(player.UID, 50)
+		go updatePlayerRating(player.UID, 50)
+		go incrementMatchesWon(player.UID)
+		duration := time.Since(room.StartTime)
+		timeTaken := int64(duration.Seconds())
+		go updateTime(player, timeTaken)
 		declareWinner(player, "Solved", rawexpressionStr)
 	} else {
 		log.Printf("Player %s submitted incorrect answer %f in room %s", player.UID, submittedAnswer, roomID)
@@ -530,6 +572,77 @@ func sendExpressionUpdate(conn *websocket.Conn, uid string, roomID string, expre
 	jsonMsg, _ := json.Marshal(msg)
 	safeSend(conn, jsonMsg)
 }
+func updateAccuracy(player *Player) {
+	ctx := context.Background()
+	userRef := dbClient.Collection("Users").Doc(player.UID)
+
+	docSnap, err := userRef.Get(ctx)
+	if err != nil {
+		log.Printf("❌ Failed to get user %s: %v", player.UID, err)
+		return
+	}
+
+	data := docSnap.Data()
+	oldAccuracy, _ := data["Accuracy"].(float64)
+	matchesPlayed, _ := data["Played"].(int64) // Firestore may store numbers as int64
+
+	if matchesPlayed == 0 {
+		log.Printf("⚠️ Matches played is 0 for %s — cannot update accuracy", player.UID)
+		return
+	}
+
+	var currentAccuracy float64
+	if player.Submissions == 0 {
+		currentAccuracy = 0
+	} else {
+		currentAccuracy = (1.0 / float64(player.Submissions)) * 100
+	}
+
+	newAccuracy := ((oldAccuracy * float64(matchesPlayed-1)) + currentAccuracy) / float64(matchesPlayed)
+
+	_, err = userRef.Update(ctx, []firestore.Update{
+		{Path: "accuracy", Value: newAccuracy},
+	})
+	if err != nil {
+		log.Printf("❌ Failed to update accuracy for %s: %v", player.UID, err)
+	} else {
+		log.Printf("✅ Updated accuracy for %s to %.2f", player.UID, newAccuracy)
+	}
+}
+func updateTime(player *Player, timeTaken int64) {
+	go func() {
+		ctx := context.Background()
+		userRef := dbClient.Collection("Users").Doc(player.UID)
+
+		docSnap, err := userRef.Get(ctx)
+		if err != nil {
+			log.Printf("❌ Failed to get user %s: %v", player.UID, err)
+			return
+		}
+
+		data := docSnap.Data()
+		oldTime, _ := data["Time"].(int64)
+		matchesPlayed, _ := data["Played"].(int64)
+
+		if matchesPlayed == 0 {
+			log.Printf("⚠️ Matches played is 0 for %s — cannot update time", player.UID)
+			return
+		}
+
+		// Compute new average time
+		newTime := ((oldTime * (matchesPlayed - 1)) + timeTaken) / matchesPlayed
+
+		_, err = userRef.Update(ctx, []firestore.Update{
+			{Path: "Time", Value: newTime},
+		})
+		if err != nil {
+			log.Printf("❌ Failed to update time for %s: %v", player.UID, err)
+		} else {
+			log.Printf("✅ Updated time for %s to %d", player.UID, newTime)
+		}
+	}()
+}
+
 func generatePuzzle() string {
 	digits := ""
 	for i := 0; i < 6; i++ {
@@ -613,6 +726,9 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string) {
 
 	// Update Firestore ratings
 	go updatePlayerRating(winner.UID, 50)
+	go incrementMatchesWon(winner.UID)
+	go updateAccuracy(winner)
+	go updateAccuracy(loser)
 	go updatePlayerRating(loser.UID, -50)
 }
 
@@ -634,6 +750,8 @@ func declareWinner(winner *Player, reason string, expression string) {
 	} else {
 		loser = room.Player1
 	}
+	go updateAccuracy(loser)
+	go updateAccuracy(winner)
 
 	if loser != nil {
 		log.Printf("Loser identified: %s", loser.UID)
