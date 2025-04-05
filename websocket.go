@@ -230,11 +230,11 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			if room, ok := rooms[msg.RoomID]; ok {
 				// Store the expression in the room
 				if room.Player1 != nil && room.Player1.UID == player.UID {
-					room.Expr1 = msg.Content // You are storing in Content here
+					room.Expr1 = msg.Expression // You are storing in Content here
 				} else if room.Player2 != nil && room.Player2.UID == player.UID {
-					room.Expr2 = msg.Content // And here
+					room.Expr2 = msg.Expression // And here
 				}
-				broadcastExpressionUpdate(room, player.UID, msg.Content) // You are then passing Content to broadcast
+				broadcastExpressionUpdate(room, player.UID, msg.Expression) // You are then passing Content to broadcast
 			}
 
 		case "submit":
