@@ -534,6 +534,9 @@ func handleDisconnection(player *Player) {
 
 			if opponent != nil {
 				log.Printf("Opponent %s FOUND in room %s with disconnected player %s.", opponent.UID, player.RoomID, player.UID)
+				duration := time.Since(room.StartTime)
+				timeTaken := int64(duration.Seconds())
+				go updateTime(opponent, timeTaken)
 				declareWinner(opponent, "opponent disconnected", "0.0") // Rely on declareWinner for cleanup
 			} else {
 				log.Printf("Opponent NOT FOUND in room %s for disconnected player %s (potential issue).", player.RoomID, player.UID)
@@ -767,6 +770,7 @@ func declareWinner(winner *Player, reason string, expression string) {
 
 	sendResult(winner, "You win!", fmt.Sprintf("(%s) (+50)", reason))
 	go updatePlayerRating(winner.UID, 50)
+	go incrementMatchesWon(winner.UID)
 	winner.Opponent = nil
 	winner.RoomID = ""
 	winner.Submitted = false
