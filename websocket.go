@@ -294,20 +294,23 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 		sendError(conn, "Room is incomplete")
 		return
 	}
+
+	// Assign the WebSocket connection to the spectator
+	spectator.Conn = conn
+
+	// Add spectator to room
+	room.Spectators = append(room.Spectators, spectator)
+	log.Println("Spectator joined room:", roomID)
+
+	// Send player meta data
 	sendPlayerMeta(conn, "Player1", room.Player1.UID)
 	sendPlayerMeta(conn, "Player2", room.Player2.UID)
 
-	// Send initial expressions (if any)
-	if room.Player1 != nil {
-		sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
-	}
-	if room.Player2 != nil {
-		sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player2.Puzzle)
-	}
-
-	// Store spectator in the room for future updates
-	room.Spectators = append(room.Spectators, spectator)
+	// Send current expressions
+	sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
+	sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player2.Puzzle)
 }
+
 func isPlayerActive(uid string) bool {
 	// Check queue
 	for _, p := range playersQueue {
