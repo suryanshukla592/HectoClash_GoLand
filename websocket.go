@@ -234,7 +234,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 				} else if room.Player2 != nil && room.Player2.UID == player.UID {
 					room.Expr2 = msg.Content
 				}
-				broadcastExpressionUpdate(room, player.UID, msg.Content)
+				broadcastExpressionUpdate(room, player.UID, msg.Content) // Assuming msg.Content is the expression
 			}
 
 		case "submit":
@@ -288,12 +288,18 @@ func cleanAllRoomsAndQueue() {
 
 	log.Println("--- Forced cleanup of all rooms and queue completed ---")
 }
+func sendExpressionUpdateToSpectator(conn *websocket.Conn, playerUID, expression, roomID string) {
+	message := Message{Type: "expressionUpdate", Opponent: playerUID, Expression: expression, RoomID: roomID}
+	jsonMessage, _ := json.Marshal(message)
+	safeSend(conn, jsonMessage)
+}
+
 func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 	updateMessage := Message{
 		Type:       "expressionUpdate",
 		Expression: expression,
 		RoomID:     room.Player1.RoomID,
-		Opponent:   playerUID, // Sending player UID in the 'opponent' field as per your Android code
+		Opponent:   playerUID,
 	}
 	updateJSON, _ := json.Marshal(updateMessage)
 
@@ -358,11 +364,6 @@ func sendPuzzle(conn *websocket.Conn, puzzle string) {
 	safeSend(conn, jsonMessage)
 }
 
-func sendExpressionUpdateToSpectator(conn *websocket.Conn, playerUID, expression, roomID string) {
-	message := Message{Type: "expressionUpdate", Opponent: playerUID, Expression: expression, RoomID: roomID}
-	jsonMessage, _ := json.Marshal(message)
-	safeSend(conn, jsonMessage)
-}
 func incrementMatchesPlayed(playerID string) {
 	ctx := context.Background()
 	_, err := dbClient.Collection("Users").Doc(playerID).Update(ctx, []firestore.Update{
