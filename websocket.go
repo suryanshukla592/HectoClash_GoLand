@@ -424,13 +424,11 @@ func closeRoom(room *Room, reason string) {
 		if left == p2.UID {
 			go updatePlayerRating(p1.UID, 50)
 			go incrementMatchesWon(p1.UID)
-			log.Printf("Increment Line 426")
 			go updatePlayerRating(p2.UID, -50)
 			sendResult(p1, "You Won !!", "Opponent Left (+50)")
 		} else if left == p1.UID {
 			go updatePlayerRating(p2.UID, 50)
 			go incrementMatchesWon(p2.UID)
-			log.Printf("Increment Line 432")
 			go updatePlayerRating(p1.UID, -50)
 			sendResult(p2, "You Won !!", "(Opponent Left) (+50)")
 		}
@@ -491,9 +489,7 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 		log.Printf("Player %s submitted correct answer %f in room %s", player.UID, submittedAnswer, roomID)
 		sendFeedback(player.Conn, "You Won (Solved) (+50)")
 		go updatePlayerRating(player.UID, 50)
-		log.Printf("Increment Line 493")
 		go incrementMatchesWon(player.UID)
-		log.Printf("Increment Line 495")
 		duration := time.Since(room.StartTime)
 		timeTaken := int64(duration.Seconds())
 		go updateTime(player, timeTaken)
@@ -734,7 +730,6 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string) {
 	// Update Firestore ratings
 	go updatePlayerRating(winner.UID, 50)
 	go incrementMatchesWon(winner.UID)
-	log.Printf("Increment Line 734")
 	go updateAccuracy(winner)
 	go updateAccuracy(loser)
 	go updatePlayerRating(loser.UID, -50)
@@ -774,10 +769,6 @@ func declareWinner(winner *Player, reason string, expression string) {
 	}
 
 	sendResult(winner, "You win!", fmt.Sprintf("(%s) (+50)", reason))
-	go updatePlayerRating(winner.UID, 50)
-	log.Printf("Increment Line 777")
-	go incrementMatchesWon(winner.UID)
-	log.Printf("Increment Line 775")
 	winner.Opponent = nil
 	winner.RoomID = ""
 	winner.Submitted = false
