@@ -289,6 +289,7 @@ func cleanAllRoomsAndQueue() {
 	log.Println("--- Forced cleanup of all rooms and queue completed ---")
 }
 func sendExpressionUpdateToSpectator(conn *websocket.Conn, playerUID, expression, roomID string) {
+	log.Printf("Sending expression update to spectator %s: %s", playerUID, expression)
 	message := Message{Type: "expressionUpdate", Opponent: playerUID, Expression: expression, RoomID: roomID}
 	jsonMessage, _ := json.Marshal(message)
 	safeSend(conn, jsonMessage)
@@ -301,13 +302,14 @@ func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 		RoomID:     room.Player1.RoomID,
 		Opponent:   playerUID,
 	}
+	log.Printf("Sending expression update to spectator %s: %s", playerUID, expression)
+
 	updateJSON, _ := json.Marshal(updateMessage)
 
 	// Send to Player 1 if they are not the sender
 	if room.Player1 != nil && room.Player1.UID != playerUID {
 		safeSend(room.Player1.Conn, updateJSON)
 	}
-
 	// Send to Player 2 if they are not the sender
 	if room.Player2 != nil && room.Player2.UID != playerUID {
 		safeSend(room.Player2.Conn, updateJSON)
