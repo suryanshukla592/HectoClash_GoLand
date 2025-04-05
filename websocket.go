@@ -127,8 +127,14 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			sendError(conn, "Spectator UID and RoomID required")
 			return
 		}
+		var rooms = make(map[string]*Room)
 		player = &Player{Conn: conn, UID: msg.UID}
-		handleSpectateRoom(conn, player, msg.RoomID)
+		room, exists := rooms[msg.RoomID]
+		if !exists {
+			sendError(conn, "Room does not exist")
+			return
+		}
+		handleSpectateRoom(conn, player, msg.RoomID, room.Puzzle)
 		return
 	}
 
@@ -227,8 +233,10 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			if room, ok := rooms[msg.RoomID]; ok {
 				if room.Player1.UID == player.UID && room.Player2 != nil {
 					safeSend(room.Player2.Conn, msgBytes)
+					sendExpressionUpdate(room.Player1.Conn, room.Player1.UID, room.Player1.RoomID, string(msgBytes))
 				} else if room.Player2.UID == player.UID && room.Player1 != nil {
 					safeSend(room.Player1.Conn, msgBytes)
+					sendExpressionUpdate(room.Player2.Conn, room.Player2.UID, room.Player2.RoomID, string(msgBytes))
 				}
 			}
 		case "submit":
@@ -283,7 +291,7 @@ func cleanAllRoomsAndQueue() {
 	log.Println("--- Forced cleanup of all rooms and queue completed ---")
 }
 
-func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) {
+func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string, puzzle string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
@@ -308,10 +316,10 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 	// Send player meta data
 	sendPlayerMeta(conn, "Player1", room.Player1.UID)
 	sendPlayerMeta(conn, "Player2", room.Player2.UID)
-
-	// Send current expressions
-	sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
-	sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player2.Puzzle)
+	//
+	//// Send current expressions
+	//sendExpressionUpdate(conn, room.Player1.UID, room.Player1.RoomID, room.Player1.Puzzle)
+	//sendExpressionUpdate(conn, room.Player2.UID, room.Player2.RoomID, room.Player2.Puzzle)
 }
 func incrementMatchesPlayed(playerID string) {
 	ctx := context.Background()
