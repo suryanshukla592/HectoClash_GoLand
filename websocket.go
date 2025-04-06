@@ -220,7 +220,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 			if roomExists {
 				log.Printf("Closing room %s because player %s disconnected.", player.RoomID, player.UID)
-				closeRoom(room, fmt.Sprintf("Opponent Left %s", player.UID), "", "", "", "", nil)
+				closeRoom(room, fmt.Sprintf("Opponent Left %s", player.UID), "", "", "", "")
 			}
 
 			handleDisconnection(player)
@@ -460,7 +460,7 @@ func startGame(p1, p2 *Player, puzzle string, roomID string) {
 }
 func startRoomTimer(room *Room) {
 	room.Timer = time.AfterFunc(gameDuration, func() {
-		closeRoom(room, "time limit reached", "", "", "", "", nil)
+		closeRoom(room, "time limit reached", "", "", "", "")
 	})
 	log.Printf("Room %s timer started for %v", room.Player1.RoomID, gameDuration)
 }
@@ -748,7 +748,7 @@ func updatePlayerRating(uid string, change int) {
 	}
 }
 
-func declareWinnerInternal(winner *Player, loser *Player, reason string, expression string) (string, string, string, string, []string) {
+func declareWinnerInternal(winner *Player, loser *Player, reason string, expression string) (string, string, string, string) {
 	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
 	sendResult(loser, "You lose!", "(-50)")
 
@@ -763,9 +763,8 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string, express
 	result2 := "lose"
 	feedback1 := fmt.Sprintf("You Won !! (%s)", reason)
 	feedback2 := fmt.Sprintf("You lose! ")
-	solutions := []string{"solution1", "solution2", "solution3"} // Replace with actual solutions
 
-	return result1, result2, feedback1, feedback2, solutions
+	return result1, result2, feedback1, feedback2
 }
 
 func declareWinner(winner *Player, reason string, expression string) {
@@ -789,31 +788,30 @@ func declareWinner(winner *Player, reason string, expression string) {
 	go updateAccuracy(loser)
 	go updateAccuracy(winner)
 
-	result1, result2, feedback1, feedback2, solutions := declareWinnerInternal(winner, loser, reason, expression)
+	result1, result2, feedback1, feedback2 := declareWinnerInternal(winner, loser, reason, expression)
 
 	if loser != nil {
-		log.Printf("About to send result to loser: %s", loser.UID)
 		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Possible Solution : %s = 100", expression))
-		log.Printf("sendResult sent")
 
 		loser.Opponent = nil
 		loser.RoomID = ""
 		loser.Submitted = false
-
-		log.Printf("About to safeSend opponent_disconnected to loser")
-		safeSend(loser.Conn, []byte(`{"type": "opponent_disconnected"}`)) // may panic or return error
-		log.Printf("safeSend done")
+		result1 = "won"
+		result2 = "lose"
+		feedback1 = fmt.Sprintf("You Won!! Solution = %s = 100", expression)
+		feedback2 = fmt.Sprintf("You Lose!! Possible Solution = %s = 100", expression)
+		safeSend(loser.Conn, []byte(`{"type": "opponent_disconnected"}`))
 	} else {
 		log.Printf("Loser NOT identified in declareWinner for room %s.", roomID)
 	}
 
-	closeRoom(room, fmt.Sprintf("Player %s Won (%s)", winner.UID, reason), result1, result2, feedback1, feedback2, solutions)
+	closeRoom(room, fmt.Sprintf("Player %s Won (%s)", winner.UID, reason), result1, result2, feedback1, feedback2)
 	// The closeRoom function will handle cleanup and saving the match history
 
 	log.Printf("--- declareWinner completed ---")
 }
 
-func closeRoom(room *Room, reason string, result1 string, result2 string, feedback1 string, feedback2 string, solutions []string) {
+func closeRoom(room *Room, reason string, result1 string, result2 string, feedback1 string, feedback2 string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
