@@ -329,6 +329,20 @@ func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 		safeSend(spectator.Conn, updateJSON)
 	}
 }
+func sendFeedbackUpdate(room *Room, playerUID, expression string) {
+	updateMessage := Message{
+		Type:       "feedbackUpdate",
+		Expression: expression,
+		Opponent:   playerUID,
+	}
+	log.Printf("Sending expression update to spectator %s: %s", playerUID, expression)
+
+	updateJSON, _ := json.Marshal(updateMessage)
+
+	for _, spectator := range room.Spectators {
+		safeSend(spectator.Conn, updateJSON)
+	}
+}
 
 func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) {
 	mutex.Lock()
@@ -478,6 +492,7 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 	if err != nil {
 		log.Printf("Error parsing submitted answer '%s': %v", submittedAnswerStr, err)
 		sendFeedback(player.Conn, "Invalid answer format.")
+		sendFeedbackUpdate(room, player.UID, "Invalid answer format.")
 		return
 	}
 	player.Submissions++
@@ -485,6 +500,7 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 	if submittedAnswer == float64(targetValue) {
 		log.Printf("Player %s submitted correct answer %d in room %s", player.UID, int64(submittedAnswer), roomID)
 		sendFeedback(player.Conn, "You Won (Solved) (+50)")
+		sendFeedbackUpdate(room, player.UID, "Won (Solved) (+50)")
 		go updatePlayerRating(player.UID, 50)
 		go incrementMatchesWon(player.UID)
 		duration := time.Since(room.StartTime)
@@ -494,6 +510,7 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 	} else {
 		log.Printf("Player %s submitted incorrect answer %d in room %s", player.UID, int64(submittedAnswer), roomID)
 		sendFeedback(player.Conn, fmt.Sprintf("Incorrect. Your answer: %d", int64(submittedAnswer)))
+		sendFeedbackUpdate(room, player.UID, fmt.Sprintf("Incorrect Submission : Answer = %d", int64(submittedAnswer)))
 	}
 }
 func handleDisconnection(player *Player) {
