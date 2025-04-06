@@ -759,7 +759,7 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string, express
 	go updateAccuracy(loser)
 	go updatePlayerRating(loser.UID, -50)
 
-	result1 := "win"
+	result1 := "won"
 	result2 := "lose"
 	feedback1 := fmt.Sprintf("You Won !! (%s)", reason)
 	feedback2 := fmt.Sprintf("You lose! ")
