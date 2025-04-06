@@ -786,20 +786,35 @@ func declareWinner(winner *Player, reason string, expression string) {
 	} else {
 		loser = room.Player1
 	}
-	go updateAccuracy(loser)
-	go updateAccuracy(winner)
 
-	result1, result2, feedback1, feedback2, solutions := declareWinnerInternal(winner, loser, reason, expression)
+	go updateAccuracy(winner) // Update accuracy for winner
+
+	result1 := "win"
+	feedback1 := fmt.Sprintf("You Won !! (%s)", reason)
+
+	result2 := "lose"
+	feedback2 := fmt.Sprintf("You lose! (Opponent solved) Possible Solution : %s = 100", expression)
+	solutions := []string{"solution1", "solution2", "solution3"} // Replace with actual solutions
+
+	go updatePlayerRating(winner.UID, 50)
+	go incrementMatchesWon(winner.UID)
+
+	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
 
 	if loser != nil {
 		log.Printf("Loser identified: %s", loser.UID)
-		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Possible Solution : %s = 100", expression))
+		go updateAccuracy(loser) // Update accuracy for loser
+		go updatePlayerRating(loser.UID, -50)
+		sendResult(loser, "You lose!", feedback2)
 		loser.Opponent = nil
 		loser.RoomID = ""
 		loser.Submitted = false
 		safeSend(loser.Conn, []byte(`{"type": "opponent_disconnected"}`)) // Inform client
 	} else {
 		log.Printf("Loser NOT identified in declareWinner for room %s.", roomID)
+		// Handle case where loser is nil (shouldn't happen, but for safety)
+		result2 = "unknown"
+		feedback2 = "Opponent data unavailable"
 	}
 
 	closeRoom(room, fmt.Sprintf("Player %s Won (%s)", winner.UID, reason), result1, result2, feedback1, feedback2, solutions)
