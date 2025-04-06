@@ -795,28 +795,29 @@ func declareWinner(winner *Player, reason string, expression string) {
 	}
 	go updateAccuracy(loser)
 	go updateAccuracy(winner)
-	result1 := ""
-	result2 := ""
-	feedback1 := ""
-	feedback2 := ""
+	SaveMatchHistory(context.Background(), winner.UID, loser.UID, room.Puzzle, "won", "lose", fmt.Sprintf("You Won!! Solution = %s = 100", expression), fmt.Sprintf("You Lose!! Possible Solution = %s = 100", expression), room.StartTime)
 
 	if loser != nil {
 		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Possible Solution : %s = 100", expression))
-
+		go updatePlayerRating(loser.UID, -50)
 		loser.Opponent = nil
 		loser.RoomID = ""
 		loser.Submitted = false
-		result1 = "won"
-		result2 = "lose"
-		feedback1 = fmt.Sprintf("You Won!! Solution = %s = 100", expression)
-		feedback2 = fmt.Sprintf("You Lose!! Possible Solution = %s = 100", expression)
 		safeSend(loser.Conn, []byte(`{"type": "opponent_disconnected"}`))
 	} else {
 		log.Printf("Loser NOT identified in declareWinner for room %s.", roomID)
 	}
+	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
+	winner.Opponent = nil
+	winner.RoomID = ""
+	winner.Submitted = false
 
-	closeRoom(room, fmt.Sprintf("Player %s Won (%s)", winner.UID, reason), result1, result2, feedback1, feedback2)
-	// The closeRoom function will handle cleanup and saving the match history
+	if room.Timer != nil {
+		room.Timer.Stop()
+		log.Printf("Timer stopped for room %s.", roomID)
+	}
+	delete(rooms, roomID)
+	log.Printf("Room %s CLOSED in declareWinner.", roomID)
 
 	log.Printf("--- declareWinner completed ---")
 }
