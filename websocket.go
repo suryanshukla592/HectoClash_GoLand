@@ -851,7 +851,7 @@ func closeRoom(room *Room, reason string, result1 string, result2 string, feedba
 			go updateTime(p1, timeTaken)
 			go updateTime(p2, 120)
 			sendResult(p1, "You Won !!", "Opponent Left (+50)")
-			result1 = "win"
+			result1 = "won"
 			result2 = "lose"
 			feedback1 = "Opponent Left"
 			feedback2 = "You Left"
