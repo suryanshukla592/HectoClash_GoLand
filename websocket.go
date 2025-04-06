@@ -355,6 +355,7 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 	// Send player meta data
 	sendPlayerMeta(conn, "Player1", room.Player1.UID)
 	sendPlayerMeta(conn, "Player2", room.Player2.UID)
+	sendPlayerMeta(conn, "Time", strconv.FormatInt(int64((gameDuration-time.Since(room.StartTime)).Seconds()), 10))
 
 	// Send initial puzzle
 	sendPuzzle(conn, room.Puzzle)
