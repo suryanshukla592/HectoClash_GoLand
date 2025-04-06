@@ -64,7 +64,8 @@ func main() {
 func setupRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", homeHandler)
-	mux.HandleFunc("/ws", handleConnection)               // WebSocket route
+	mux.HandleFunc("/ws", handleConnection)
+	mux.HandleFunc("/ping", pingHandler)                  // WebSocket route
 	mux.HandleFunc("/admin/cleanup", adminCleanupHandler) // Add the admin cleanup route
 	return mux
 }
@@ -72,6 +73,10 @@ func setupRoutes() http.Handler {
 // HTTP Handlers
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("🏠 Welcome to HectoClash!"))
+}
+func pingHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("pong 🏓"))
 }
 
 // adminCleanupHandler handles the request to clean all rooms and the queue.
