@@ -763,6 +763,14 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string, express
 	result2 := "lose"
 	feedback1 := fmt.Sprintf("You Won !! (%s)", reason)
 	feedback2 := fmt.Sprintf("You lose! ")
+	var foundRoom *Room
+	for _, room := range rooms {
+		if room.Player1 == winner || room.Player2 == winner || room.Player1 == loser || room.Player2 == loser {
+			foundRoom = room
+			break
+		}
+	}
+	closeRoom(foundRoom, reason, result1, result2, feedback1, feedback2)
 
 	return result1, result2, feedback1, feedback2
 }
@@ -787,8 +795,10 @@ func declareWinner(winner *Player, reason string, expression string) {
 	}
 	go updateAccuracy(loser)
 	go updateAccuracy(winner)
-
-	result1, result2, feedback1, feedback2 := declareWinnerInternal(winner, loser, reason, expression)
+	result1 := ""
+	result2 := ""
+	feedback1 := ""
+	feedback2 := ""
 
 	if loser != nil {
 		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Possible Solution : %s = 100", expression))
