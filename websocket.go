@@ -143,17 +143,6 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		handleSpectateRoom(conn, player, msg.RoomID) // Corrected call
 		return
 	}
-	if msg.Type == "createPrivateRoom": {
-	log.Println("Handling createPrivateRoom request.")
-	player.UID = msg.UID
-	handleCreatePrivateRoom(conn, player)
-	}
-	
-	if msg.Type == "joinPrivateRoom": {
-	log.Println("Handling joinPrivateRoom request.")
-	player.UID = msg.UID
-	handleJoinPrivateRoom(conn, player, msg.RoomID)
-	}
 	var req MatchRequest
 	if err := json.Unmarshal(p, &req); err != nil {
 		log.Printf("Error unmarshalling MatchRequest: %v", err)
@@ -902,75 +891,6 @@ func declareWinner(winner *Player, reason string, expression string) {
 
 	log.Printf("--- declareWinner completed ---")
 }
-func handleCreatePrivateRoom(conn *websocket.Conn, creator *Player) {
-	roomID := fmt.Sprintf("private-%d", time.Now().UnixNano()) // Generate a unique private room ID
-	creator.RoomID = roomID
-	creator.Submissions = 0
-	room := &Room{
-	 Player1:   creator,
-	 Puzzle:    generatePuzzle(),
-	 StartTime: time.Now(),
-	 Expr1:     "",
-	 Expr2:     "",
-	 IsPrivate: true, // Mark the room as private
-	}
-	rooms[roomID] = room
-   
-	mutex.Lock()
-	activePlayers[creator.UID] = creator
-	mutex.Unlock()
-   
-	log.Printf("Private room created with ID: %s by player: %s", roomID, creator.UID)
-   
-	// Send the Room ID back to the creator
-	message := Message{Type: "privateRoomCreated", RoomID: roomID}
-	jsonMessage, _ := json.Marshal(message)
-	safeSend(conn, jsonMessage)
-   }
-   
-func handleJoinPrivateRoom(conn *websocket.Conn, joiningPlayer *Player, roomID string) {
-	mutex.Lock()
-	room, ok := rooms[roomID]
-	if !ok {
-		mutex.Unlock()
-		log.Printf("Private room not found: %s", roomID)
-		sendError(conn, "Private room not found")
-		return
-	}
-
-	if room.IsPrivate != true {
-		mutex.Unlock()
-		log.Printf("Attempted to join a non-private room using private room ID: %s", roomID)
-		sendError(conn, "Invalid room ID")
-		return
-	}
-
-	if room.Player2 != nil {
-		mutex.Unlock()
-		log.Printf("Private room %s is full", roomID)
-		sendError(conn, "Room is full")
-		return
-	}
-
-	joiningPlayer.RoomID = roomID
-	joiningPlayer.Submissions = 0
-	room.Player2 = joiningPlayer
-	room.Player2.Puzzle = room.Puzzle
-	room.Player2.opponentID = room.Player1.UID
-	room.Player1.opponentID = room.Player2.UID
-
-	mutex.Unlock()
-
-	mutex.Lock()
-	activePlayers[joiningPlayer.UID] = joiningPlayer
-	mutex.Unlock()
-
-	log.Printf("Player %s joined private room: %s", joiningPlayer.UID, roomID)
-
-	startGame(room.Player1, room.Player2, room.Puzzle, roomID)
-	startRoomTimer(room)
-	}
-
 func closeRoom(room *Room, reason string, result1 string, result2 string, feedback1 string, feedback2 string) {
 	mutex.Lock()
 	defer mutex.Unlock()
