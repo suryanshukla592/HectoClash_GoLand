@@ -37,7 +37,8 @@ type Player struct {
 
 // MatchRequest represents the initial matchmaking request from the client.
 type MatchRequest struct {
-	UID string `json:"uid"`
+    UID string `json:"uid"`
+    Code string `json:"code"` // New field for private room code
 }
 type MessageSpec struct {
 	Type   string `json:"type"` // Should be "identify"
@@ -142,6 +143,17 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		handleSpectateRoom(conn, player, msg.RoomID) // Corrected call
 		return
 	}
+	if msg.Type == "createPrivateRoom": {
+	log.Println("Handling createPrivateRoom request.")
+	player.UID = msg.UID
+	handleCreatePrivateRoom(conn, player)
+	}
+	
+	if msg.Type == "joinPrivateRoom": {
+	log.Println("Handling joinPrivateRoom request.")
+	player.UID = msg.UID
+	handleJoinPrivateRoom(conn, player, msg.RoomID)
+	}
 	var req MatchRequest
 	if err := json.Unmarshal(p, &req); err != nil {
 		log.Printf("Error unmarshalling MatchRequest: %v", err)
@@ -164,49 +176,100 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 	mutex.Lock()
 
-	// Check if the player is already in a room or queue
-	log.Printf("Current players in queue: %d", len(playersQueue))
-	if len(playersQueue) > 0 {
-		opponent := playersQueue[0]
-		playersQueue = playersQueue[1:]
-		log.Printf("Found opponent: %s", opponent.UID)
-		if player.UID == opponent.UID {
-			log.Printf("Attempted to match player %s with themselves. Re-queuing opponent.", player.UID)
-			playersQueue = append(playersQueue, player)   // Re-queue the current player
-			playersQueue = append(playersQueue, opponent) // Re-queue the opponent
-			sendError(conn, "Could not find a suitable opponent at this time. Please wait.")
-			return
-		}
-		roomID := fmt.Sprintf("room-%d", rand.Intn(10000))
-		player.Opponent = opponent
-		opponent.Opponent = player
-		player.RoomID = roomID
-		player.Submissions = 0
-		opponent.Submissions = 0
-		opponent.RoomID = roomID
-		puzzle := generatePuzzle()
-		player.Puzzle = puzzle
-		opponent.Puzzle = puzzle
-		player.opponentID = opponent.UID
-		opponent.opponentID = player.UID
+	if req.Code == "" || req.Code == "default" { // Public matchmaking
+		log.Printf("Current players in public queue: %d", len(playersQueue))
+		if len(playersQueue) > 0 {
+			opponent := playersQueue[0]
+			playersQueue = playersQueue[1:]
+			log.Printf("Found opponent: %s", opponent.UID)
+			if player.UID == opponent.UID {
+				log.Printf("Attempted to match player %s with themselves. Re-queuing opponent.", player.UID)
+				playersQueue = append(playersQueue, player)   // Re-queue the current player
+				playersQueue = append(playersQueue, opponent) // Re-queue the opponent
+				sendError(conn, "Could not find a suitable opponent at this time. Please wait.")
+				mutex.Unlock() // Unlock before returning
+				return
+			}
+			roomID := fmt.Sprintf("room-%d", rand.Intn(10000))
+			player.Opponent = opponent
+			opponent.Opponent = player
+			player.RoomID = roomID
+			player.Submissions = 0
+			opponent.Submissions = 0
+			opponent.RoomID = roomID
+			puzzle := generatePuzzle()
+			player.Puzzle = puzzle
+			opponent.Puzzle = puzzle
+			player.opponentID = opponent.UID
+			opponent.opponentID = player.UID
 
-		room := &Room{
-			Player1:   player,
-			Player2:   opponent,
-			Puzzle:    puzzle,
-			StartTime: time.Now(),
-			Expr1:     "", // Initialize expressions
-			Expr2:     "",
-		}
-		startRoomTimer(room)
-		rooms[roomID] = room // Store the Room struct
-		mutex.Unlock()
+			room := &Room{
+				Player1:   player,
+				Player2:   opponent,
+				Puzzle:    puzzle,
+				StartTime: time.Now(),
+				Expr1:     "", // Initialize expressions
+				Expr2:     "",
+			}
+			startRoomTimer(room)
+			rooms[roomID] = room // Store the Room struct
+			mutex.Unlock()       // Unlock after modifying shared data
 
-		startGame(player, opponent, puzzle, roomID)
-	} else {
-		log.Printf("Player queued for matchmaking: %s", req.UID)
-		playersQueue = append(playersQueue, player)
-		mutex.Unlock()
+			startGame(player, opponent, puzzle, roomID)
+		} else {
+			log.Printf("Player queued for public matchmaking: %s", req.UID)
+			playersQueue = append(playersQueue, player)
+			mutex.Unlock() // Unlock after modifying shared data
+		}
+	} else { // Private matchmaking
+		log.Printf("Player %s is requesting private match with code: %s", req.UID, req.Code)
+		privateQueue := privateQueues[req.Code]
+
+		foundOpponent := false
+		for i, opponent := range privateQueue {
+			if opponent.UID != player.UID { // Ensure not matching with self
+				// Found an opponent in the private queue for this code
+				privateQueues[req.Code] = append(privateQueue[:i], privateQueue[i+1:]...) // Remove opponent from queue
+
+				log.Printf("Found private opponent %s for player %s with code %s.", opponent.UID, player.UID, req.Code)
+
+				roomID := fmt.Sprintf("private-room-%s-%d", req.Code, rand.Intn(10000))
+				player.Opponent = opponent
+				opponent.Opponent = player
+				player.RoomID = roomID
+				player.Submissions = 0
+				opponent.Submissions = 0
+				opponent.RoomID = roomID
+				puzzle := generatePuzzle()
+				player.Puzzle = puzzle
+				opponent.Puzzle = puzzle
+				player.opponentID = opponent.UID
+				opponent.opponentID = player.UID
+
+				room := &Room{
+					Player1:   player,
+					Player2:   opponent,
+					Puzzle:    puzzle,
+					StartTime: time.Now(),
+					Expr1:     "",
+					Expr2:     "",
+				}
+				startRoomTimer(room)
+				rooms[roomID] = room // Store the Room struct
+				foundOpponent = true
+				mutex.Unlock() // Unlock after modifying shared data
+				startGame(player, opponent, puzzle, roomID)
+				break
+			}
+		}
+
+		if !foundOpponent {
+			// No opponent found, add player to the private queue for this code
+			privateQueues[req.Code] = append(privateQueues[req.Code], player)
+			log.Printf("Player %s queued for private matchmaking with code: %s. Current private queue size: %d", req.UID, req.Code, len(privateQueues[req.Code]))
+			sendFeedback(conn, fmt.Sprintf("Waiting for opponent to join with code: %s", req.Code))
+			mutex.Unlock() // Unlock after modifying shared data
+		}
 	}
 	for {
 		_, msgBytes, err := conn.ReadMessage()
@@ -839,6 +902,74 @@ func declareWinner(winner *Player, reason string, expression string) {
 
 	log.Printf("--- declareWinner completed ---")
 }
+func handleCreatePrivateRoom(conn *websocket.Conn, creator *Player) {
+	roomID := fmt.Sprintf("private-%d", time.Now().UnixNano()) // Generate a unique private room ID
+	creator.RoomID = roomID
+	creator.Submissions = 0
+	room := &Room{
+	 Player1:   creator,
+	 Puzzle:    generatePuzzle(),
+	 StartTime: time.Now(),
+	 Expr1:     "",
+	 Expr2:     "",
+	 IsPrivate: true, // Mark the room as private
+	}
+	rooms[roomID] = room
+   
+	mutex.Lock()
+	activePlayers[creator.UID] = creator
+	mutex.Unlock()
+   
+	log.Printf("Private room created with ID: %s by player: %s", roomID, creator.UID)
+   
+	// Send the Room ID back to the creator
+	message := Message{Type: "privateRoomCreated", RoomID: roomID}
+	jsonMessage, _ := json.Marshal(message)
+	safeSend(conn, jsonMessage)
+   }
+   
+func handleJoinPrivateRoom(conn *websocket.Conn, joiningPlayer *Player, roomID string) {
+	mutex.Lock()
+	room, ok := rooms[roomID]
+	if !ok {
+		mutex.Unlock()
+		log.Printf("Private room not found: %s", roomID)
+		sendError(conn, "Private room not found")
+		return
+	}
+
+	if room.IsPrivate != true {
+		mutex.Unlock()
+		log.Printf("Attempted to join a non-private room using private room ID: %s", roomID)
+		sendError(conn, "Invalid room ID")
+		return
+	}
+
+	if room.Player2 != nil {
+		mutex.Unlock()
+		log.Printf("Private room %s is full", roomID)
+		sendError(conn, "Room is full")
+		return
+	}
+
+	joiningPlayer.RoomID = roomID
+	joiningPlayer.Submissions = 0
+	room.Player2 = joiningPlayer
+	room.Player2.Puzzle = room.Puzzle
+	room.Player2.opponentID = room.Player1.UID
+	room.Player1.opponentID = room.Player2.UID
+
+	mutex.Unlock()
+
+	mutex.Lock()
+	activePlayers[joiningPlayer.UID] = joiningPlayer
+	mutex.Unlock()
+
+	log.Printf("Player %s joined private room: %s", joiningPlayer.UID, roomID)
+
+	startGame(room.Player1, room.Player2, room.Puzzle, roomID)
+	startRoomTimer(room)
+	}
 
 func closeRoom(room *Room, reason string, result1 string, result2 string, feedback1 string, feedback2 string) {
 	mutex.Lock()

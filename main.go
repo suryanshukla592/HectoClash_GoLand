@@ -20,11 +20,16 @@ const port = "8080"
 
 var (
 	playersQueue []*Player
+	privateQueues = make(map[string][]*Player)
 	rooms        = make(map[string]*Room)
 	mutex        sync.Mutex
-	upgrader     = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
+	upgrader = websocket.Upgrader{
+        ReadBufferSize:  1024,
+        WriteBufferSize: 1024,
+        CheckOrigin: func(r *http.Request) bool {
+            return true // Allow all origins for now
+        },
+    }
 	firebaseApp *firebase.App
 	dbClient    *firestore.Client
 )
