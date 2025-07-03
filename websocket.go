@@ -478,6 +478,13 @@ func isPlayerActive(uid string) bool {
 			return true
 		}
 	}
+	for _, queue := range privateQueues {
+		for _, p := range queue {
+			if p.UID == uid {
+				return true
+			}
+		}
+	}
 
 	// Check rooms
 	for _, room := range rooms {
@@ -584,6 +591,25 @@ func handleDisconnection(player *Player) {
 		player.Opponent = nil
 		player.RoomID = ""
 		log.Printf("Disconnection handled for player %s (was in queue).", player.UID)
+		return
+	}
+	for code, queue := range privateQueues {
+		for i, p := range queue {
+			if p == player {
+				privateQueues[code] = append(queue[:i], queue[i+1:]...)
+				log.Printf("Player %s REMOVED from private queue for code %s.", player.UID, code)
+				isQueued = true
+				break
+			}
+		}
+		if isQueued {
+			break
+		}
+	}
+	if isQueued {
+		player.Opponent = nil
+		player.RoomID = ""
+		log.Printf("Disconnection handled for player %s (was in private queue).", player.UID)
 		return
 	}
 
