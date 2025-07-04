@@ -256,7 +256,6 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			// No opponent found, add player to the private queue for this code
 			privateQueues[req.Code] = append(privateQueues[req.Code], player)
 			log.Printf("Player %s queued for private matchmaking with code: %s. Current private queue size: %d", req.UID, req.Code, len(privateQueues[req.Code]))
-			sendFeedback(conn, fmt.Sprintf("Waiting for opponent to join with code: %s", req.Code))
 			mutex.Unlock() // Unlock after modifying shared data
 		}
 	}
