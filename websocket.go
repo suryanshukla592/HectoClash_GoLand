@@ -172,13 +172,13 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			playersQueue = playersQueue[1:]
 			log.Printf("Found opponent: %s", opponent.UID)
 			if player.UID == opponent.UID {
-				log.Printf("Attempted to match player %s with themselves. Re-queuing opponent.", player.UID)
-				playersQueue = append(playersQueue, player)   // Re-queue the current player
-				playersQueue = append(playersQueue, opponent) // Re-queue the opponent
+				log.Printf("Attempted to match player %s with themselves. Skipping self-match.", player.UID)
+				playersQueue = append(playersQueue, player) // only add back once
 				sendError(conn, "Could not find a suitable opponent at this time. Please wait.")
-				mutex.Unlock() // Unlock before returning
+				mutex.Unlock()
 				return
 			}
+
 			roomID := fmt.Sprintf("room-%d", rand.Intn(10000))
 			player.Opponent = opponent
 			opponent.Opponent = player
