@@ -111,7 +111,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	log.Println("Client connected.")
+	//log.Println("Client connected.")
 
 	player := &Player{Conn: conn}
 
@@ -129,10 +129,22 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if msg.Type == "requestRoomList" {
-		log.Println("Handling room list request.")
-		sendRoomList(conn)
+		log.Printf("Handling persistent room list push for UID: %s", msg.UID)
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			defer conn.Close()
+
+			for {
+				select {
+				case <-ticker.C:
+					sendRoomList(conn)
+				}
+			}
+		}()
 		return
 	}
+
 	if msg.Type == "spectateRoom" {
 	log.Println("Handling spectateRoom request.")
 	if msg.UID == "" || msg.RoomID == "" {
@@ -543,7 +555,7 @@ func isPlayerActive(uid string) bool {
 }
 func sendRoomList(conn *websocket.Conn) {
 	mutex.Lock()
-	log.Printf("sendroom list")
+	//log.Printf("sendroom list")
 	roomList := make(map[string]map[string]string)
 	for id, r := range rooms {
 		roomInfo := make(map[string]string)
