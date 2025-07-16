@@ -134,14 +134,36 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if msg.Type == "spectateRoom" {
-		log.Println("Handling spectateRoom request.")
-		if msg.UID == "" || msg.RoomID == "" {
-			sendError(conn, "Spectator UID and RoomID required")
-			return
-		}
-		player = &Player{Conn: conn, UID: msg.UID}
-		handleSpectateRoom(conn, player, msg.RoomID) // Corrected call
+	log.Println("Handling spectateRoom request.")
+	if msg.UID == "" || msg.RoomID == "" {
+		sendError(conn, "Spectator UID and RoomID required")
 		return
+	}
+	player = &Player{Conn: conn, UID: msg.UID}
+	handleSpectateRoom(conn, player, msg.RoomID)
+			go func() {
+			defer conn.Close()
+			for {
+				_, _, err := conn.ReadMessage()
+				if err != nil {
+					log.Printf("Spectator %s disconnected: %v", player.UID, err)
+					mutex.Lock()
+					room, exists := rooms[msg.RoomID]
+					if exists {
+						newSpectators := []*Player{}
+						for _, spec := range room.Spectators {
+							if spec.UID != player.UID {
+								newSpectators = append(newSpectators, spec)
+							}
+						}
+						room.Spectators = newSpectators
+					}
+					mutex.Unlock()
+					break
+				}
+			}
+		}()
+		select {}
 	}
 	var req MatchRequest
 	if err := json.Unmarshal(p, &req); err != nil {
@@ -158,6 +180,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	if isPlayerActive(player.UID) {
 		log.Printf("Player %s is already active (in queue or room). Rejecting new connection.", player.UID)
 		sendError(conn, "You are already in matchmaking or in a game.")
+		conn.Close()
 		return
 	}
 	player.UID = req.UID
@@ -893,7 +916,7 @@ func declareWinner(winner *Player, reason string, expression string) {
 	SaveMatchHistory(context.Background(), winner.UID, loser.UID, room.Puzzle, "won", "lose", fmt.Sprintf("You Won!! Solution = %s = 100", expression), fmt.Sprintf("You Lose!! Possible Solution = %s = 100", expression), room.StartTime)
 
 	if loser != nil {
-		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Possible Solution : %s = 100", expression))
+		sendResult(loser, "You lose!", fmt.Sprintf("(opponent solved) (-50) \n\n Opponent's Solution : %s = 100", expression))
 		go updatePlayerRating(loser.UID, -50)
 		loser.Opponent = nil
 		loser.RoomID = ""
