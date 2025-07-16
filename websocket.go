@@ -138,14 +138,14 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 		player := &Player{Conn: conn, UID: msg.UID}
 		mutex.Lock()
-		spectators[msg.UID] = player
+		Spectators[msg.UID] = player
 		mutex.Unlock()
 		sendRoomList(conn)
 		go func() {
 			for {
 				time.Sleep(1500 * time.Millisecond)
 				mutex.Lock()
-				p := spectators[msg.UID]
+				p := Spectators[msg.UID]
 				mutex.Unlock()
 				if p != nil {
 					sendRoomList(p.Conn)
@@ -161,7 +161,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					log.Printf("Spectator %s disconnected: %v", player.UID, err)
 					mutex.Lock()
-					delete(spectators, msg.UID)
+					delete(Spectators, msg.UID)
 					mutex.Unlock()
 					break
 				}
