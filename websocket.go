@@ -130,10 +130,10 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 
 	if msg.Type == "requestRoomList" {
 		log.Printf("Handling persistent room list push for UID: %s", msg.UID)
-
+		sendRoomList(conn)
 		// Start ticker to send room list updates every 2 seconds
 		go func() {
-			ticker := time.NewTicker(2 * time.Second)
+			ticker := time.NewTicker(1.5 * time.Second)
 			defer ticker.Stop()
 
 			for {
