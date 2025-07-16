@@ -129,46 +129,35 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if msg.Type == "requestRoomList" {
-		log.Println("Handling requestRoomList")
+		log.Printf("Handling persistent room list push for UID: %s", msg.UID)
 
-		if msg.UID == "" {
-			sendError(conn, "UID required")
-			return
-		}
-
-		player := &Player{Conn: conn, UID: msg.UID}
-		mutex.Lock()
-		Spectators[msg.UID] = player
-		mutex.Unlock()
-		sendRoomList(conn)
+		// Start ticker to send room list updates every 2 seconds
 		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+
 			for {
-				time.Sleep(1500 * time.Millisecond)
-				mutex.Lock()
-				p := Spectators[msg.UID]
-				mutex.Unlock()
-				if p != nil {
-					sendRoomList(p.Conn)
-				} else {
-					break
+				select {
+				case <-ticker.C:
+					sendRoomList(conn)
 				}
 			}
 		}()
+
+		// Start read loop to keep the connection alive and detect disconnection
 		go func() {
 			defer conn.Close()
 			for {
 				_, _, err := conn.ReadMessage()
 				if err != nil {
-					log.Printf("Spectator %s disconnected: %v", player.UID, err)
-					mutex.Lock()
-					delete(Spectators, msg.UID)
-					mutex.Unlock()
+					log.Printf("Spectator %s disconnected: %v", msg.UID, err)
 					break
 				}
 			}
 		}()
 
-		select {} // Block forever to keep connection alive
+		// Keep this handler alive
+		select {}
 	}
 
 
