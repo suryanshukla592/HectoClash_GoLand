@@ -325,6 +325,31 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(msgBytes, &submitReq); err == nil {
 				handleSubmission(player, submitReq.Expression, submitReq.RawExpression, submitReq.RoomID)
 			}
+		case "submiterror":
+			var errorMsg struct {
+				UID        string `json:"uid"`
+				RoomID     string `json:"room_id"`
+				Expression string `json:"expression"`
+			}
+
+			if err := json.Unmarshal(msgBytes, &errorMsg); err != nil {
+				log.Printf("Invalid submiterror payload: %v", err)
+				return
+			}
+
+			mutex.Lock()
+			room, exists := rooms[errorMsg.RoomID]
+			mutex.Unlock()
+
+			if !exists {
+				log.Printf("submiterror: Room %s not found", errorMsg.RoomID)
+				return
+			}
+
+			log.Printf("Received submiterror from %s in room %s: %s", errorMsg.UID, errorMsg.RoomID, errorMsg.Expression)
+
+			sendFeedbackUpdate(room, errorMsg.UID, errorMsg.Expression)
+
 		default:
 			log.Printf("Unknown message type: %s", msg.Type)
 		}
