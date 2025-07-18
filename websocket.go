@@ -111,7 +111,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	//log.Println("Client connected.")
+	log.Println("Client connected.")
 
 	player := &Player{Conn: conn}
 
@@ -133,7 +133,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		sendRoomList(conn)
 		// Start ticker to send room list updates every 2 seconds
 		go func() {
-			ticker := time.NewTicker(1.5 * time.Second)
+			ticker := time.NewTicker(0.4 * time.Second)
 			defer ticker.Stop()
 
 			for {
@@ -634,7 +634,7 @@ func handleSubmission(player *Player, expression string, rawexpression string, r
 	if submittedAnswer == float64(targetValue) {
 		log.Printf("Player %s submitted correct answer %d in room %s", player.UID, int64(submittedAnswer), roomID)
 		sendFeedback(player.Conn, "You Won (Solved) (+50)")
-		sendFeedbackUpdate(room, player.UID, "Won (Solved) (+50)")
+		sendFeedbackUpdate(room, player.UID, "Win")
 		go updatePlayerRating(player.UID, 50)
 		go incrementMatchesWon(player.UID)
 		duration := time.Since(room.StartTime)
@@ -921,6 +921,7 @@ func updatePlayerRating(uid string, change int) {
 
 func declareWinnerInternal(winner *Player, loser *Player, reason string, expression string) (string, string, string, string) {
 	sendResult(winner, "You Won !!", fmt.Sprintf("(%s) (+50)", reason))
+
 	sendResult(loser, "You lose!", "(-50)")
 
 	// Update Firestore ratings
@@ -941,6 +942,7 @@ func declareWinnerInternal(winner *Player, loser *Player, reason string, express
 			break
 		}
 	}
+	sendFeedbackUpdate(foundRoom, winner.UID, "Win")
 	closeRoom(foundRoom, reason, result1, result2, feedback1, feedback2)
 
 	return result1, result2, feedback1, feedback2
@@ -1020,6 +1022,7 @@ func closeRoom(room *Room, reason string, result1 string, result2 string, feedba
 			go updateTime(p1, timeTaken)
 			go updateTime(p2, 120)
 			sendResult(p1, "You Won !!", "Opponent Left (+50)")
+			sendFeedbackUpdate(room, p2.UID, "Left")
 			result1 = "won"
 			result2 = "lose"
 			feedback1 = "Opponent Left"
@@ -1032,6 +1035,7 @@ func closeRoom(room *Room, reason string, result1 string, result2 string, feedba
 			timeTaken := int64(duration.Seconds())
 			go updateTime(p2, timeTaken)
 			go updateTime(p1, 120)
+			sendFeedbackUpdate(room, p1.UID, "Left")
 			sendResult(p2, "You Won !!", "(Opponent Left) (+50)")
 			result1 = "lose"
 			result2 = "win"
@@ -1046,6 +1050,7 @@ func closeRoom(room *Room, reason string, result1 string, result2 string, feedba
 		go updateTime(p2, 120)
 		sendResult(p1, "Time limit reached", "Match Drawn. (-10)")
 		sendResult(p2, "Time limit reached", "Match Drawn. (-10)")
+		sendFeedbackUpdate(room, p1.UID, "Draw")
 		result1 = "draw"
 		result2 = "draw"
 		feedback1 = "Time limit reached"
@@ -1065,6 +1070,7 @@ func closeRoom(room *Room, reason string, result1 string, result2 string, feedba
 				go updateTime(p2, 120)
 				sendResult(p1, "Time limit reached", "Match Drawn. (-10)")
 				sendResult(p2, "Time limit reached", "Match Drawn. (-10)")
+				sendFeedbackUpdate(room, p2.UID, "Draw")
 				result1 = "draw"
 				result2 = "draw"
 				feedback1 = "Time limit reached"
