@@ -133,7 +133,7 @@ func handleConnection(w http.ResponseWriter, r *http.Request) {
 		sendRoomList(conn)
 		// Start ticker to send room list updates every 2 seconds
 		go func() {
-			ticker := time.NewTicker(0.4 * time.Second)
+			ticker := time.NewTicker(400 * time.Millisecond)
 			defer ticker.Stop()
 
 			for {
