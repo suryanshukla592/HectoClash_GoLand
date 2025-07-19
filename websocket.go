@@ -424,13 +424,6 @@ func cleanAllRoomsAndQueue() {
 
 	log.Println("--- Forced cleanup of all rooms and queue completed ---")
 }
-func sendExpressionUpdateToSpectator(conn *websocket.Conn, playerUID, expression, roomID string) {
-	log.Printf("Sending expression update to spectator %s: %s", playerUID, expression)
-	message := Message{Type: "expressionUpdate", Opponent: playerUID, Expression: expression, RoomID: roomID}
-	jsonMessage, _ := json.Marshal(message)
-	safeSend(conn, jsonMessage)
-}
-
 func broadcastExpressionUpdate(room *Room, playerUID, expression string) {
 	updateMessage := Message{
 		Type:       "expressionUpdate",
@@ -501,9 +494,9 @@ func handleSpectateRoom(conn *websocket.Conn, spectator *Player, roomID string) 
 	// Send initial puzzle
 	sendPuzzle(conn, room.Puzzle)
 
-	// Send current expressions
-	sendExpressionUpdateToSpectator(conn, room.Player1.UID, room.Expr1, room.Player1.RoomID)
-	sendExpressionUpdateToSpectator(conn, room.Player2.UID, room.Expr2, room.Player2.RoomID)
+	// Send current expression
+	broadcastExpressionUpdate(room, room.Player1.UID, room.Expr1)
+	broadcastExpressionUpdate(room, room.Player2.UID, room.Expr2)
 }
 func sendPlayerMeta(conn *websocket.Conn, role, uid string) {
 	message := Message{Type: "playerMeta", Player: uid, Content: uid, Opponent: role} // Keep 'Opponent' for now based on your Android code
